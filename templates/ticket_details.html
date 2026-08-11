@@ -1,0 +1,77 @@
+﻿{% extends "base.html" %}
+
+{% block title %}Szczegóły zgłoszenia{% endblock %}
+
+{% block content %}
+<div class="mb-4 d-flex justify-content-between align-items-start">
+  <div>
+    <h1>{{ ticket.title }}</h1>
+    <p class="text-muted mb-1">Utworzone: {{ ticket.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
+    <span class="badge bg-info text-dark">{{ ticket.status }}</span>
+  </div>
+  <a class="btn btn-outline-secondary" href="{{ url_for('tickets') }}">Powrót</a>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-6">
+    <div class="card shadow-sm mb-4">
+      <div class="card-body">
+        <h5 class="card-title">Opis zgłoszenia</h5>
+        <p>{{ ticket.description }}</p>
+      </div>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+      <div class="card-body">
+        <h5 class="card-title">Zmień status</h5>
+        <form method="post">
+          <input type="hidden" name="action" value="status">
+          <div class="mb-3">
+            <select class="form-select" name="status">
+              {% for status in statuses %}
+                <option value="{{ status }}" {% if status == ticket.status %}selected{% endif %}>{{ status }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary">Zmień status</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card shadow-sm mb-4">
+      <div class="card-body">
+        <h5 class="card-title">Komentarze</h5>
+        {% if comments %}
+          <ul class="list-group list-group-flush">
+            {% for comment in comments %}
+              <li class="list-group-item">
+                <div class="d-flex justify-content-between">
+                  <strong>{{ comment.author.username }}</strong>
+                  <span class="text-muted small">{{ comment.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                </div>
+                <p class="mb-0">{{ comment.comment }}</p>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="text-muted">Brak komentarzy.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title">Dodaj komentarz</h5>
+        <form method="post">
+          <div class="mb-3">
+            <textarea class="form-control" name="comment" rows="4" required></textarea>
+          </div>
+          <button type="submit" class="btn btn-success">Dodaj komentarz</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

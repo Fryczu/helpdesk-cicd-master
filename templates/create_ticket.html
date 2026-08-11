@@ -1,0 +1,27 @@
+﻿{% extends "base.html" %}
+
+{% block title %}Nowe zgłoszenie{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h1 class="h4 mb-3">Dodaj nowe zgłoszenie</h1>
+        <form method="post">
+          <div class="mb-3">
+            <label for="title" class="form-label">Tytuł</label>
+            <input type="text" class="form-control" id="title" name="title" value="{{ title or '' }}" required>
+          </div>
+          <div class="mb-3">
+            <label for="description" class="form-label">Opis</label>
+            <textarea class="form-control" id="description" name="description" rows="6" required>{{ description or '' }}</textarea>
+          </div>
+          <button type="submit" class="btn btn-success">Utwórz zgłoszenie</button>
+          <a class="btn btn-link" href="{{ url_for('tickets') }}">Anuluj</a>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

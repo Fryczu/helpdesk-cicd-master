@@ -1,0 +1,42 @@
+﻿{% extends "base.html" %}
+
+{% block title %}Lista zgłoszeń{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h1>Lista zgłoszeń</h1>
+    <p class="text-muted">Wszystkie zgłoszenia w systemie.</p>
+  </div>
+  <a class="btn btn-primary" href="{{ url_for('create_ticket') }}">Dodaj zgłoszenie</a>
+</div>
+
+{% if tickets %}
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Tytuł</th>
+          <th>Status</th>
+          <th>Data utworzenia</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ticket in tickets %}
+          <tr>
+            <td>{{ ticket.id }}</td>
+            <td>{{ ticket.title }}</td>
+            <td><span class="badge bg-info text-dark">{{ ticket.status }}</span></td>
+            <td>{{ ticket.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            <td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('ticket_details', ticket_id=ticket.id) }}">Szczegóły</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <p class="text-muted">Brak zgłoszeń w systemie.</p>
+{% endif %}
+{% endblock %}
