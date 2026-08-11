@@ -13,18 +13,32 @@
 
 <div class="row g-3 mb-4">
   {% for status, count in statuses.items() %}
+    {% set badge_class = {
+      'New': 'bg-primary',
+      'In Progress': 'bg-warning text-dark',
+      'Resolved': 'bg-success',
+      'Closed': 'bg-secondary'
+    }.get(status, 'bg-light text-dark') %}
     <div class="col-md-3">
-      <div class="card shadow-sm">
+      <div class="card shadow-sm border-0 h-100">
         <div class="card-body">
-          <h5 class="card-title">{{ status }}</h5>
-          <p class="display-6 mb-0">{{ count }}</p>
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <span class="badge {{ badge_class }} rounded-pill px-3 py-2">{{ status }}</span>
+          </div>
+          <div class="d-flex align-items-end justify-content-between">
+            <div>
+              <p class="text-muted mb-1">Liczba zgłoszeń</p>
+              <h3 class="mb-0">{{ count }}</h3>
+            </div>
+            <div class="fs-1 text-muted opacity-50">#</div>
+          </div>
         </div>
       </div>
     </div>
   {% endfor %}
 </div>
 
-<div class="card shadow-sm">
+<div class="card shadow-sm mb-4">
   <div class="card-body">
     <h5 class="card-title">Ostatnie zgłoszenia</h5>
     {% if recent_tickets %}
@@ -33,14 +47,50 @@
           <li class="list-group-item d-flex justify-content-between align-items-center">
             <div>
               <a href="{{ url_for('ticket_details', ticket_id=ticket.id) }}">{{ ticket.title }}</a>
-              <div class="text-muted small">{{ ticket.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
+              <div class="text-muted small">{{ ticket.category.name }} · {{ ticket.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
             </div>
-            <span class="badge bg-secondary">{{ ticket.status }}</span>
+            <div class="text-end">
+              <div class="badge bg-secondary mb-1">{{ ticket.status }}</div><br>
+              {% if ticket.assigned_technician %}
+                <small class="text-muted">{{ ticket.assigned_technician.username }}</small>
+              {% else %}
+                <small class="text-muted">Brak przypisania</small>
+              {% endif %}
+            </div>
           </li>
         {% endfor %}
       </ul>
     {% else %}
       <p class="text-muted mb-0">Brak zgłoszeń do wyświetlenia.</p>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <h5 class="card-title">Ostatnia aktywność</h5>
+    {% if recent_activity %}
+      <ul class="list-group list-group-flush">
+        {% for activity in recent_activity %}
+          <li class="list-group-item">
+            <div class="d-flex justify-content-between gap-3 align-items-start">
+              <div>
+                <div class="mb-1">
+                  <strong>{{ activity.user.username }}</strong>
+                  <span class="text-muted">·</span>
+                  <a href="{{ url_for('ticket_details', ticket_id=activity.ticket_id) }}" class="text-decoration-none">
+                    Zgłoszenie #{{ activity.ticket_id }}
+                  </a>
+                </div>
+                <div class="text-muted small">{{ activity.message }}</div>
+              </div>
+              <span class="text-muted small text-nowrap">{{ activity.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="text-muted mb-0">Brak aktywności w systemie.</p>
     {% endif %}
   </div>
 </div>

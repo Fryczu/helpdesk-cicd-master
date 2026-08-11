@@ -8,14 +8,27 @@
     <div class="card shadow-sm">
       <div class="card-body">
         <h1 class="h4 mb-3">Dodaj nowe zgłoszenie</h1>
-        <form method="post">
+        <form method="post" enctype="multipart/form-data">
           <div class="mb-3">
             <label for="title" class="form-label">Tytuł</label>
             <input type="text" class="form-control" id="title" name="title" value="{{ title or '' }}" required>
           </div>
           <div class="mb-3">
+            <label for="category_id" class="form-label">Kategoria</label>
+            <select class="form-select" id="category_id" name="category_id" required>
+              <option value="">Wybierz kategorię</option>
+              {% for category in categories %}
+                <option value="{{ category.id }}">{{ category.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
             <label for="description" class="form-label">Opis</label>
             <textarea class="form-control" id="description" name="description" rows="6" required>{{ description or '' }}</textarea>
+          </div>
+          <div class="mb-3">
+            <label for="attachments" class="form-label">Załączniki</label>
+            <input type="file" class="form-control" id="attachments" name="attachments" multiple>
           </div>
           <button type="submit" class="btn btn-success">Utwórz zgłoszenie</button>
           <a class="btn btn-link" href="{{ url_for('tickets') }}">Anuluj</a>

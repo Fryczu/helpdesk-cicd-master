@@ -3,40 +3,69 @@
 {% block title %}Lista zgłoszeń{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-  <div>
-    <h1>Lista zgłoszeń</h1>
-    <p class="text-muted">Wszystkie zgłoszenia w systemie.</p>
+<div class="row g-4">
+  <div class="col-lg-3">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title mb-3">Filtry</h5>
+        <div class="list-group">
+          <a class="list-group-item list-group-item-action {% if active_filter == 'all' %}active{% endif %}" href="{{ url_for('tickets') }}?filter=all">Wszystkie zgłoszenia</a>
+          <a class="list-group-item list-group-item-action {% if active_filter == 'unassigned' %}active{% endif %}" href="{{ url_for('tickets') }}?filter=unassigned">Nieprzypisane zgłoszenia</a>
+          <a class="list-group-item list-group-item-action {% if active_filter == 'assigned' %}active{% endif %}" href="{{ url_for('tickets') }}?filter=assigned">Przypisane zgłoszenia</a>
+          <a class="list-group-item list-group-item-action {% if active_filter == 'rejected' %}active{% endif %}" href="{{ url_for('tickets') }}?filter=rejected">Zgłoszenia odrzucone</a>
+          <a class="list-group-item list-group-item-action {% if active_filter == 'completed' %}active{% endif %}" href="{{ url_for('tickets') }}?filter=completed">Zgłoszenia ukończone</a>
+        </div>
+      </div>
+    </div>
   </div>
-  <a class="btn btn-primary" href="{{ url_for('create_ticket') }}">Dodaj zgłoszenie</a>
-</div>
 
-{% if tickets %}
-  <div class="table-responsive">
-    <table class="table table-hover align-middle">
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Tytuł</th>
-          <th>Status</th>
-          <th>Data utworzenia</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for ticket in tickets %}
-          <tr>
-            <td>{{ ticket.id }}</td>
-            <td>{{ ticket.title }}</td>
-            <td><span class="badge bg-info text-dark">{{ ticket.status }}</span></td>
-            <td>{{ ticket.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-            <td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('ticket_details', ticket_id=ticket.id) }}">Szczegóły</a></td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <div class="col-lg-9">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <div>
+        <h1>Lista zgłoszeń</h1>
+        <p class="text-muted">Wszystkie zgłoszenia w systemie.</p>
+      </div>
+      <a class="btn btn-primary" href="{{ url_for('create_ticket') }}">Dodaj zgłoszenie</a>
+    </div>
+
+    {% if tickets %}
+      <div class="table-responsive">
+        <table class="table table-hover align-middle">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Tytuł</th>
+              <th>Kategoria</th>
+              <th>Przypisany technik</th>
+              <th>Status</th>
+              <th>Data utworzenia</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for ticket in tickets %}
+              <tr>
+                <td>{{ ticket.id }}</td>
+                <td>{{ ticket.title }}</td>
+                <td>{{ ticket.category.name }}</td>
+                <td>
+                  {% if ticket.assigned_technician %}
+                    {{ ticket.assigned_technician.username }}
+                  {% else %}
+                    <span class="text-muted">Brak</span>
+                  {% endif %}
+                </td>
+                <td><span class="badge bg-info text-dark">{{ ticket.status }}</span></td>
+                <td>{{ ticket.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('ticket_details', ticket_id=ticket.id) }}">Szczegóły</a></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="text-muted">Brak zgłoszeń w systemie.</p>
+    {% endif %}
   </div>
-{% else %}
-  <p class="text-muted">Brak zgłoszeń w systemie.</p>
-{% endif %}
+</div>
 {% endblock %}

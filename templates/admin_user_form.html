@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}{% if user %}Edytuj użytkownika{% else %}Nowy użytkownik{% endif %}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h1 class="h4 mb-3">
+          {% if user %}Edytuj użytkownika{% else %}Dodaj użytkownika{% endif %}
+        </h1>
+
+        <form method="post">
+          <div class="mb-3">
+            <label for="username" class="form-label">Nazwa użytkownika</label>
+            <input
+              type="text"
+              class="form-control"
+              id="username"
+              name="username"
+              value="{{ user.username if user else '' }}"
+              {% if user %}readonly{% endif %}
+              required>
+          </div>
+
+          {% if not user %}
+            <div class="mb-3">
+              <label for="email" class="form-label">Email</label>
+              <input type="email" class="form-control" id="email" name="email" value="" required>
+            </div>
+          {% endif %}
+
+          <div class="mb-3">
+            <label for="password" class="form-label">
+              {% if user %}Nowe hasło{% else %}Hasło{% endif %}
+            </label>
+            <input
+              type="password"
+              class="form-control"
+              id="password"
+              name="password"
+              {% if user %}placeholder="Pozostaw puste, aby nie zmieniać hasła"{% endif %}
+              {% if not user %}required{% endif %}>
+          </div>
+
+          <div class="mb-3">
+            <label for="role" class="form-label">Rola</label>
+            <select class="form-select" id="role" name="role">
+              {% for role in roles %}
+                <option value="{{ role }}" {% if user and user.role == role %}selected{% endif %}>{{ role }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="form-check mb-4">
+            <input class="form-check-input" type="checkbox" value="on" id="is_active" name="is_active" {% if not user or user.is_active %}checked{% endif %}>
+            <label class="form-check-label" for="is_active">
+              Konto aktywne
+            </label>
+          </div>
+
+          <button type="submit" class="btn btn-primary">Zapisz</button>
+          <a href="{{ url_for('admin_users') }}" class="btn btn-link">Anuluj</a>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

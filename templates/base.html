@@ -17,12 +17,19 @@
         <div class="collapse navbar-collapse" id="navbarNav">
           <ul class="navbar-nav ms-auto">
             {% if current_user %}
-              <li class="nav-item">
-                <a class="nav-link" href="{{ url_for('dashboard') }}">Dashboard</a>
-              </li>
+              {% if current_user.role != 'User' %}
+                <li class="nav-item">
+                  <a class="nav-link" href="{{ url_for('dashboard') }}">Dashboard</a>
+                </li>
+              {% endif %}
               <li class="nav-item">
                 <a class="nav-link" href="{{ url_for('tickets') }}">Zgłoszenia</a>
               </li>
+              {% if current_user.role == 'Admin' %}
+                <li class="nav-item">
+                  <a class="nav-link" href="{{ url_for('admin_users') }}">Administracja</a>
+                </li>
+              {% endif %}
               <li class="nav-item">
                 <a class="nav-link" href="{{ url_for('logout') }}">Wyloguj</a>
               </li>
