@@ -1,9 +1,15 @@
-﻿from datetime import datetime
+from datetime import UTC, datetime
 from flask_sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
 TICKET_STATUSES = ["New", "In Progress", "Resolved", "Closed"]
 USER_ROLES = ["Admin", "Technician", "User"]
+
+
+def utc_now_naive():
+    """Return the current UTC time as a naive datetime for existing DB columns."""
+    return datetime.now(UTC).replace(tzinfo=None)
+
 DEFAULT_CATEGORIES = [
     "Hardware",
     "Software",
@@ -69,7 +75,7 @@ class Ticket(db.Model):
     title = db.Column(db.String(140), nullable=False)
     description = db.Column(db.Text, nullable=False)
     status = db.Column(db.String(50), nullable=False, default="New")
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=utc_now_naive)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     category_id = db.Column(db.Integer, db.ForeignKey("categories.id"), nullable=False)
     assigned_to_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
@@ -96,7 +102,7 @@ class ActivityLog(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     action = db.Column(db.String(80), nullable=False)
     message = db.Column(db.Text, nullable=False)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=utc_now_naive)
     ticket = db.relationship("Ticket", back_populates="activity_logs")
     user = db.relationship("User", back_populates="activity_logs")
 
@@ -113,7 +119,7 @@ class Attachment(db.Model):
     original_name = db.Column(db.String(255), nullable=False)
     content_type = db.Column(db.String(120), nullable=False)
     size = db.Column(db.Integer, nullable=False, default=0)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=utc_now_naive)
     path = db.Column(db.String(255), nullable=False)
     ticket = db.relationship("Ticket", back_populates="attachments")
 
@@ -128,7 +134,7 @@ class Comment(db.Model):
     ticket_id = db.Column(db.Integer, db.ForeignKey("tickets.id"), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     comment = db.Column(db.Text, nullable=False)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=utc_now_naive)
     ticket = db.relationship("Ticket", back_populates="comments")
     author = db.relationship("User", back_populates="comments")
 

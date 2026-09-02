@@ -1,8 +1,9 @@
-﻿import os
+import os
 import uuid
 from functools import wraps
+from urllib.parse import quote_plus
 
-from flask import Flask, flash, redirect, render_template, request, send_from_directory, session, url_for
+from flask import Flask, abort, flash, redirect, render_template, request, send_from_directory, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
@@ -19,14 +20,31 @@ from models import (
     db,
 )
 
+def build_database_uri():
+    explicit_url = os.getenv("DATABASE_URL")
+    if explicit_url:
+        return explicit_url
+
+    db_host = os.getenv("DB_HOST")
+    if db_host:
+        db_user = quote_plus(os.getenv("DB_USER", "helpdesk"))
+        db_password = quote_plus(os.getenv("DB_PASSWORD", ""))
+        db_name = quote_plus(os.getenv("DB_NAME", "helpdesk_db"))
+        db_port = os.getenv("DB_PORT", "5432")
+        return f"postgresql+psycopg2://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+
+    # Local-development fallback retained for the documented baseline workflow.
+    return "postgresql://postgres:1234@localhost:5432/helpdesk_db"
+
+
 app = Flask(__name__, template_folder="templates", static_folder="static")
-app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
-    "DATABASE_URL",
-    "postgresql://postgres:1234@localhost:5432/helpdesk_db",
-)
+app.config["SQLALCHEMY_DATABASE_URI"] = build_database_uri()
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "change-this-secret")
-app.config["UPLOAD_FOLDER"] = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads", "attachments")
+app.config["UPLOAD_FOLDER"] = os.getenv(
+    "UPLOAD_FOLDER",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads", "attachments"),
+)
 
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
@@ -37,7 +55,7 @@ def current_user():
     user_id = session.get("user_id")
     if user_id is None:
         return None
-    return User.query.get(user_id)
+    return db.session.get(User, user_id)
 
 
 def login_required(view):
@@ -230,7 +248,7 @@ def create_ticket():
                 categories=categories,
             )
 
-        if category_id is None or not Category.query.get(category_id):
+        if category_id is None or db.session.get(Category, category_id) is None:
             flash("Wybierz poprawną kategorię zgłoszenia.", "danger")
             return render_template(
                 "create_ticket.html",
@@ -265,7 +283,9 @@ def create_ticket():
 @app.route("/tickets/<int:ticket_id>", methods=["GET", "POST"])
 @login_required
 def ticket_details(ticket_id):
-    ticket = Ticket.query.get_or_404(ticket_id)
+    ticket = db.session.get(Ticket, ticket_id)
+    if ticket is None:
+        abort(404)
     user = current_user()
 
     if not can_access_ticket(user, ticket):
@@ -389,7 +409,9 @@ def ticket_details(ticket_id):
 @app.route("/attachments/<int:attachment_id>")
 @login_required
 def download_attachment(attachment_id):
-    attachment = Attachment.query.get_or_404(attachment_id)
+    attachment = db.session.get(Attachment, attachment_id)
+    if attachment is None:
+        abort(404)
     ticket = attachment.ticket
     user = current_user()
 
@@ -457,7 +479,9 @@ def admin_create_user():
 @login_required
 @role_required("Admin")
 def admin_edit_user(user_id):
-    user = User.query.get_or_404(user_id)
+    user = db.session.get(User, user_id)
+    if user is None:
+        abort(404)
 
     if request.method == "POST":
         role = request.form.get("role", user.role)
@@ -483,7 +507,9 @@ def admin_edit_user(user_id):
 @login_required
 @role_required("Admin")
 def admin_delete_user(user_id):
-    user = User.query.get_or_404(user_id)
+    user = db.session.get(User, user_id)
+    if user is None:
+        abort(404)
 
     if user.id == current_user().id:
         flash("Nie można usunąć własnego konta z poziomu panelu administratora.", "danger")
@@ -526,12 +552,16 @@ def create_default_categories():
 
 
 def create_default_admin():
+    username = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
+    email = os.getenv("DEFAULT_ADMIN_EMAIL", "admin@example.com")
+    password = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin123")
+
     with app.app_context():
-        if not User.query.filter_by(username="admin").first():
+        if not User.query.filter_by(username=username).first():
             default_user = User(
-                username="admin",
-                email="admin@example.com",
-                password_hash=generate_password_hash("admin123"),
+                username=username,
+                email=email,
+                password_hash=generate_password_hash(password),
                 role="Admin",
                 is_active=True,
             )
@@ -544,4 +574,10 @@ if __name__ == "__main__":
         db.create_all()
         create_default_categories()
         create_default_admin()
-    app.run(debug=True)
+
+    debug_enabled = os.getenv("FLASK_DEBUG", "true").lower() in {"1", "true", "yes", "on"}
+    app.run(
+        host=os.getenv("FLASK_HOST", "127.0.0.1"),
+        port=int(os.getenv("FLASK_PORT", "5000")),
+        debug=debug_enabled,
+    )
