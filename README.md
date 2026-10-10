@@ -27,6 +27,10 @@ Projekt rejestruje zdarzenia istotne z punktu widzenia bezpieczeństwa. Zapisywa
 
 Administrator może przeglądać i filtrować wpisy w widoku `Administracja -> Bezpieczeństwo`. Rejestr nie zapisuje haseł ani wartości sekretów.
 
+## Identyfikacja zgłaszającego
+
+Technik i administrator widzą nazwę użytkownika zgłaszającego na liście zgłoszeń. W widoku szczegółów zgłoszenia dostępna jest dodatkowo nazwa użytkownika oraz adres e-mail zgłaszającego. Dane są pobierane z istniejącej relacji `Ticket.creator`, dlatego zmiana nie wymaga nowej migracji bazy danych.
+
 Schemat bazy danych jest wersjonowany przez Flask-Migrate/Alembic. Przy starcie aplikacji wykonywane jest `upgrade` do najnowszej rewizji. Istniejąca baza utworzona wcześniej przez `db.create_all()` jest automatycznie oznaczana jako rewizja bazowa i następnie otrzymuje tylko brakujące migracje. Dzięki temu aktualizacja nie wymaga kasowania wolumenu PostgreSQL.
 
 ## Uruchomienie testów lokalnie
@@ -52,12 +56,13 @@ python -m pytest -q
 
 Testy korzystają z odizolowanej bazy SQLite oraz tymczasowego katalogu na załączniki, dlatego nie wymagają lokalnego PostgreSQL.
 
-Aktualny zestaw obejmuje 25 testów. Testy podzielono na:
+Aktualny zestaw obejmuje 29 testów. Testy podzielono na:
 
 - `tests/test_auth.py` - logowanie, sesja i kontrola dostępu,
-- `tests/test_tickets.py` - zgłoszenia, komentarze, statusy, przypisania i załączniki,
+- `tests/test_tickets.py` - zgłoszenia, komentarze, statusy, przypisania, załączniki oraz widoczność danych zgłaszającego,
 - `tests/test_admin.py` - funkcje administratora,
 - `tests/test_security.py` - rejestrowanie zdarzeń bezpieczeństwa i ochrona ostatniego administratora,
+- `tests/test_system.py` - endpointy `/health` i `/version`,
 - `tests/conftest.py` - wspólna konfiguracja środowiska testowego.
 
 ## Uruchomienie lokalne bez Dockera
@@ -160,7 +165,7 @@ Dane są przechowywane w dwóch nazwanych wolumenach:
 - `postgres_data` - dane PostgreSQL,
 - `attachments_data` - załączniki z HelpDesku.
 
-Aplikacja czeka na dostępność bazy, automatycznie stosuje brakujące migracje Alembic, przygotowuje dane startowe, a następnie uruchamia serwer Gunicorn. Healthcheck sprawdza dostępność endpointu `/login`.
+Aplikacja czeka na dostępność bazy, automatycznie stosuje brakujące migracje Alembic, przygotowuje dane startowe, a następnie uruchamia serwer Gunicorn. Healthcheck sprawdza endpoint `/health`, który weryfikuje działanie aplikacji oraz połączenie z bazą danych.
 
 ## Zmienne środowiskowe kontenera
 

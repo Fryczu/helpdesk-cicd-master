@@ -1,4 +1,4 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 
 {% block title %}Lista zgłoszeń{% endblock %}
 
@@ -36,6 +36,9 @@
               <th>#</th>
               <th>Tytuł</th>
               <th>Kategoria</th>
+              {% if current_user and current_user.role in ['Technician', 'Admin'] %}
+                <th>Zgłaszający</th>
+              {% endif %}
               <th>Przypisany technik</th>
               <th>Status</th>
               <th>Data utworzenia</th>
@@ -48,6 +51,9 @@
                 <td>{{ ticket.id }}</td>
                 <td>{{ ticket.title }}</td>
                 <td>{{ ticket.category.name }}</td>
+                {% if current_user and current_user.role in ['Technician', 'Admin'] %}
+                  <td>{{ ticket.creator.username }}</td>
+                {% endif %}
                 <td>
                   {% if ticket.assigned_technician %}
                     {{ ticket.assigned_technician.username }}
