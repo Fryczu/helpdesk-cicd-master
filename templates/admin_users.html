@@ -8,7 +8,10 @@
     <h1>Panel administratora</h1>
     <p class="text-muted">Zarządzanie użytkownikami i uprawnieniami.</p>
   </div>
-  <a class="btn btn-success" href="{{ url_for('admin_create_user') }}">Dodaj użytkownika</a>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-primary" href="{{ url_for('admin_security_events') }}">Dziennik bezpieczeństwa</a>
+    <a class="btn btn-success" href="{{ url_for('admin_create_user') }}">Dodaj użytkownika</a>
+  </div>
 </div>
 
 <div class="card shadow-sm">

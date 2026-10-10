@@ -4,7 +4,7 @@ import time
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
-from app import app, create_default_admin, create_default_categories, db
+from app import app, apply_database_migrations, create_default_admin, create_default_categories, db
 
 
 def wait_for_database(max_attempts=30, delay_seconds=2):
@@ -27,11 +27,10 @@ def wait_for_database(max_attempts=30, delay_seconds=2):
 
 
 def initialize_database():
-    with app.app_context():
-        db.create_all()
+    apply_database_migrations()
     create_default_categories()
     create_default_admin()
-    print("Database schema and initial data are ready.")
+    print("Database migrations and initial data are ready.")
 
 
 if __name__ == "__main__":

@@ -15,7 +15,8 @@ Celem konteneryzacji jest ograniczenie zależności procesu uruchomienia od konf
 - `docker-compose.yml` - definicja aplikacji i PostgreSQL,
 - `.env.example` - wzorzec konfiguracji środowiskowej,
 - `docker-entrypoint.sh` - inicjalizacja bazy przed uruchomieniem serwera,
-- `init_db.py` - oczekiwanie na bazę oraz przygotowanie schematu i danych startowych,
+- `init_db.py` - oczekiwanie na bazę, uruchomienie migracji oraz przygotowanie danych startowych,
+- `migrations/` - wersjonowane zmiany schematu bazy obsługiwane przez Flask-Migrate/Alembic,
 - `gunicorn` - serwer WSGI wykorzystywany wewnątrz kontenera.
 
 ## 3. Obraz aplikacji
@@ -44,11 +45,12 @@ Z tego powodu przygotowano `init_db.py`. Skrypt:
 
 1. oczekuje na dostępność bazy,
 2. sprawdza połączenie zapytaniem `SELECT 1`,
-3. wykonuje `db.create_all()`,
-4. tworzy brakujące kategorie,
-5. tworzy konto administratora, jeżeli jeszcze nie istnieje.
+3. uruchamia migracje Alembic do najnowszej rewizji,
+4. w przypadku starszej istniejącej bazy utworzonej przez `db.create_all()` oznacza ją jako rewizję bazową bez usuwania danych,
+5. tworzy brakujące kategorie,
+6. tworzy konto administratora, jeżeli jeszcze nie istnieje.
 
-Skrypt wykonywany jest przez `docker-entrypoint.sh` przed uruchomieniem Gunicorn.
+Skrypt wykonywany jest przez `docker-entrypoint.sh` przed uruchomieniem Gunicorn. Dzięki temu zmiana schematu może zostać dostarczona razem z nową wersją aplikacji bez ręcznego tworzenia tabel.
 
 ## 6. Konfiguracja i sekrety
 

@@ -3,7 +3,21 @@ import uuid
 from functools import wraps
 from urllib.parse import quote_plus
 
-from flask import Flask, abort, flash, redirect, render_template, request, send_from_directory, session, url_for
+from flask import (
+    Flask,
+    abort,
+    flash,
+    has_request_context,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    send_from_directory,
+    session,
+    url_for,
+)
+from flask_migrate import Migrate, stamp, upgrade
+from sqlalchemy import inspect, text
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
@@ -15,6 +29,7 @@ from models import (
     Attachment,
     Category,
     Comment,
+    SecurityEvent,
     Ticket,
     User,
     db,
@@ -49,6 +64,18 @@ app.config["UPLOAD_FOLDER"] = os.getenv(
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
 db.init_app(app)
+migrate = Migrate(app, db, compare_type=True)
+
+
+def apply_database_migrations():
+    """Upgrade the database schema and adopt legacy pre-Alembic databases safely."""
+    with app.app_context():
+        tables = set(inspect(db.engine).get_table_names())
+        if "alembic_version" not in tables and "users" in tables:
+            # Existing installations created by db.create_all() already contain the baseline schema.
+            stamp(revision="0001_initial_schema")
+            app.logger.info("Legacy database stamped at migration 0001_initial_schema.")
+        upgrade()
 
 
 def current_user():
@@ -56,6 +83,40 @@ def current_user():
     if user_id is None:
         return None
     return db.session.get(User, user_id)
+
+
+def log_security_event(
+    event_type,
+    *,
+    success=True,
+    user=None,
+    target_user=None,
+    username=None,
+    details=None,
+):
+    """Persist a security-relevant event without recording passwords or secret values."""
+    ip_address = None
+    user_agent = None
+    if has_request_context():
+        ip_address = request.remote_addr
+        user_agent = request.user_agent.string[:255] if request.user_agent else None
+
+    event = SecurityEvent(
+        event_type=event_type,
+        success=success,
+        user_id=user.id if user else None,
+        target_user_id=target_user.id if target_user else None,
+        username=(username or (user.username if user else None))[:80] if (username or (user.username if user else None)) else None,
+        ip_address=ip_address,
+        user_agent=user_agent,
+        details=details,
+    )
+    try:
+        db.session.add(event)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Could not save security event %s", event_type)
 
 
 def login_required(view):
@@ -87,6 +148,12 @@ def role_required(*allowed_roles):
                 flash("Konto użytkownika zostało dezaktywowane.", "warning")
                 return redirect(url_for("login"))
             if allowed_roles and user.role not in allowed_roles:
+                log_security_event(
+                    "access_denied",
+                    success=False,
+                    user=user,
+                    details=f"Odmowa dostępu do {request.path}; wymagane role: {', '.join(allowed_roles)}.",
+                )
                 flash("Nie masz uprawnień do tej części systemu.", "danger")
                 return redirect(url_for("dashboard"))
             return view(*args, **kwargs)
@@ -138,6 +205,28 @@ def log_activity(ticket_id, user_id, action, message):
     db.session.commit()
 
 
+@app.route("/health")
+def health():
+    """Lightweight deployment health check including database connectivity."""
+    try:
+        db.session.execute(text("SELECT 1"))
+        return jsonify(status="ok", database="ok"), 200
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Health check failed")
+        return jsonify(status="error", database="unavailable"), 503
+
+
+@app.route("/version")
+def version():
+    """Return the application version identifiers used by deployment verification."""
+    return jsonify(
+        application="HelpDesk",
+        version=os.getenv("APP_VERSION", "local"),
+        commit=os.getenv("GIT_COMMIT", "unknown"),
+    ), 200
+
+
 @app.route("/")
 def index():
     user = current_user()
@@ -159,12 +248,30 @@ def login():
         user = User.query.filter_by(username=username).first()
         if user and user.is_active and check_password_hash(user.password_hash, password):
             session["user_id"] = user.id
+            log_security_event(
+                "login_success",
+                user=user,
+                details="Poprawne uwierzytelnienie użytkownika.",
+            )
             flash("Zalogowano pomyślnie.", "success")
             return redirect(url_for("tickets" if user.role == "User" else "dashboard"))
 
         if user and not user.is_active:
+            log_security_event(
+                "login_failed",
+                success=False,
+                user=user,
+                details="Próba logowania na dezaktywowane konto.",
+            )
             flash("Konto użytkownika zostało dezaktywowane.", "warning")
         else:
+            log_security_event(
+                "login_failed",
+                success=False,
+                user=user,
+                username=username or None,
+                details="Niepoprawna nazwa użytkownika lub hasło.",
+            )
             flash("Niepoprawna nazwa użytkownika lub hasło.", "danger")
 
     return render_template("login.html")
@@ -172,6 +279,13 @@ def login():
 
 @app.route("/logout")
 def logout():
+    user = current_user()
+    if user is not None:
+        log_security_event(
+            "logout",
+            user=user,
+            details="Użytkownik zakończył sesję.",
+        )
     session.pop("user_id", None)
     flash("Wylogowano.", "success")
     return redirect(url_for("login"))
@@ -289,6 +403,12 @@ def ticket_details(ticket_id):
     user = current_user()
 
     if not can_access_ticket(user, ticket):
+        log_security_event(
+            "access_denied",
+            success=False,
+            user=user,
+            details=f"Odmowa dostępu do zgłoszenia #{ticket.id}.",
+        )
         flash("Nie masz uprawnień do przeglądania tego zgłoszenia.", "danger")
         return redirect(url_for("tickets"))
 
@@ -416,6 +536,12 @@ def download_attachment(attachment_id):
     user = current_user()
 
     if not can_access_ticket(user, ticket):
+        log_security_event(
+            "access_denied",
+            success=False,
+            user=user,
+            details=f"Odmowa pobrania załącznika #{attachment.id} ze zgłoszenia #{ticket.id}.",
+        )
         flash("Nie masz uprawnień do pobrania tego załącznika.", "danger")
         return redirect(url_for("tickets"))
 
@@ -435,6 +561,40 @@ def admin_dashboard():
 def admin_users():
     users = User.query.order_by(User.username.asc()).all()
     return render_template("admin_users.html", users=users, roles=USER_ROLES)
+
+
+@app.route("/admin/security-events")
+@login_required
+@role_required("Admin")
+def admin_security_events():
+    event_type = request.args.get("event_type", "").strip()
+    success_filter = request.args.get("success", "").strip().lower()
+    username = request.args.get("username", "").strip()
+
+    query = SecurityEvent.query
+    if event_type:
+        query = query.filter(SecurityEvent.event_type == event_type)
+    if success_filter in {"true", "false"}:
+        query = query.filter(SecurityEvent.success.is_(success_filter == "true"))
+    if username:
+        query = query.filter(SecurityEvent.username.ilike(f"%{username}%"))
+
+    events = query.order_by(SecurityEvent.created_at.desc()).limit(250).all()
+    event_types = [
+        row[0]
+        for row in db.session.query(SecurityEvent.event_type)
+        .distinct()
+        .order_by(SecurityEvent.event_type.asc())
+        .all()
+    ]
+    return render_template(
+        "security_events.html",
+        events=events,
+        event_types=event_types,
+        selected_event_type=event_type,
+        selected_success=success_filter,
+        username_filter=username,
+    )
 
 
 @app.route("/admin/users/new", methods=["GET", "POST"])
@@ -469,6 +629,12 @@ def admin_create_user():
         )
         db.session.add(user)
         db.session.commit()
+        log_security_event(
+            "user_created",
+            user=current_user(),
+            target_user=user,
+            details=f"Utworzono konto {user.username} z rolą {user.role}.",
+        )
         flash("Użytkownik został utworzony.", "success")
         return redirect(url_for("admin_users"))
 
@@ -492,11 +658,59 @@ def admin_edit_user(user_id):
             flash("Nieprawidłowa rola użytkownika.", "danger")
             return render_template("admin_user_form.html", user=user, roles=USER_ROLES)
 
+        active_admin_count = User.query.filter_by(role="Admin", is_active=True).count()
+        removes_last_active_admin = (
+            user.role == "Admin"
+            and user.is_active
+            and active_admin_count <= 1
+            and (role != "Admin" or not is_active)
+        )
+        if removes_last_active_admin:
+            log_security_event(
+                "permission_change_rejected",
+                success=False,
+                user=current_user(),
+                target_user=user,
+                details="Zablokowano próbę odebrania uprawnień ostatniemu aktywnemu administratorowi.",
+            )
+            flash("Nie można odebrać uprawnień ostatniemu aktywnemu administratorowi.", "danger")
+            return render_template("admin_user_form.html", user=user, roles=USER_ROLES)
+
+        old_role = user.role
+        old_is_active = user.is_active
+        password_changed = bool(password)
+
         user.role = role
         user.is_active = is_active
-        if password:
+        if password_changed:
             user.password_hash = generate_password_hash(password)
         db.session.commit()
+
+        admin = current_user()
+        if old_role != user.role:
+            log_security_event(
+                "user_role_changed",
+                user=admin,
+                target_user=user,
+                details=f"Zmiana roli użytkownika {user.username}: {old_role} -> {user.role}.",
+            )
+        if old_is_active != user.is_active:
+            log_security_event(
+                "user_status_changed",
+                user=admin,
+                target_user=user,
+                details=(
+                    f"Konto {user.username} zostało "
+                    f"{'aktywowane' if user.is_active else 'dezaktywowane'}."
+                ),
+            )
+        if password_changed:
+            log_security_event(
+                "user_password_reset",
+                user=admin,
+                target_user=user,
+                details=f"Administrator zresetował hasło użytkownika {user.username}.",
+            )
         flash("Dane użytkownika zostały zaktualizowane.", "success")
         return redirect(url_for("admin_users"))
 
@@ -532,8 +746,17 @@ def admin_delete_user(user_id):
     for ticket in list(user.assigned_tickets):
         ticket.assigned_to_id = None
 
+    deleted_username = user.username
+    deleted_role = user.role
+    admin = current_user()
     db.session.delete(user)
     db.session.commit()
+    log_security_event(
+        "user_deleted",
+        user=admin,
+        username=admin.username if admin else None,
+        details=f"Usunięto konto {deleted_username} z rolą {deleted_role}.",
+    )
     flash("Użytkownik został usunięty.", "success")
     return redirect(url_for("admin_users"))
 
@@ -570,10 +793,9 @@ def create_default_admin():
 
 
 if __name__ == "__main__":
-    with app.app_context():
-        db.create_all()
-        create_default_categories()
-        create_default_admin()
+    apply_database_migrations()
+    create_default_categories()
+    create_default_admin()
 
     debug_enabled = os.getenv("FLASK_DEBUG", "true").lower() in {"1", "true", "yes", "on"}
     app.run(

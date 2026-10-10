@@ -7,11 +7,27 @@ Aplikacja HelpDesk napisana w Python Flask z wykorzystaniem PostgreSQL. Repozyto
 - Python 3.13
 - Flask
 - Flask-SQLAlchemy
+- Flask-Migrate / Alembic
 - PostgreSQL
 - Bootstrap 5
 - pytest
 - Docker / Docker Compose
 - Gunicorn
+
+## Rozszerzenia bezpieczeństwa i bazy danych
+
+Projekt rejestruje zdarzenia istotne z punktu widzenia bezpieczeństwa. Zapisywane są m.in.:
+
+- udane i nieudane logowania,
+- wylogowania,
+- próby wejścia do zasobów bez wymaganej roli,
+- tworzenie i usuwanie kont,
+- zmiany ról oraz aktywności kont,
+- reset hasła wykonywany przez administratora.
+
+Administrator może przeglądać i filtrować wpisy w widoku `Administracja -> Bezpieczeństwo`. Rejestr nie zapisuje haseł ani wartości sekretów.
+
+Schemat bazy danych jest wersjonowany przez Flask-Migrate/Alembic. Przy starcie aplikacji wykonywane jest `upgrade` do najnowszej rewizji. Istniejąca baza utworzona wcześniej przez `db.create_all()` jest automatycznie oznaczana jako rewizja bazowa i następnie otrzymuje tylko brakujące migracje. Dzięki temu aktualizacja nie wymaga kasowania wolumenu PostgreSQL.
 
 ## Uruchomienie testów lokalnie
 
@@ -36,11 +52,12 @@ python -m pytest -q
 
 Testy korzystają z odizolowanej bazy SQLite oraz tymczasowego katalogu na załączniki, dlatego nie wymagają lokalnego PostgreSQL.
 
-Testy podzielono na:
+Aktualny zestaw obejmuje 25 testów. Testy podzielono na:
 
 - `tests/test_auth.py` - logowanie, sesja i kontrola dostępu,
 - `tests/test_tickets.py` - zgłoszenia, komentarze, statusy, przypisania i załączniki,
 - `tests/test_admin.py` - funkcje administratora,
+- `tests/test_security.py` - rejestrowanie zdarzeń bezpieczeństwa i ochrona ostatniego administratora,
 - `tests/conftest.py` - wspólna konfiguracja środowiska testowego.
 
 ## Uruchomienie lokalne bez Dockera
@@ -55,7 +72,9 @@ Stan bazowy aplikacji nadal można uruchomić bezpośrednio.
 
 2. Opcjonalnie ustaw `DATABASE_URL` oraz `SECRET_KEY`.
 
-3. Uruchom aplikację:
+3. Zainstaluj zależności zaktualizowanego projektu. Flask-Migrate jest wymagany do obsługi migracji.
+
+4. Uruchom aplikację:
 
 ```powershell
 python app.py
@@ -141,7 +160,7 @@ Dane są przechowywane w dwóch nazwanych wolumenach:
 - `postgres_data` - dane PostgreSQL,
 - `attachments_data` - załączniki z HelpDesku.
 
-Aplikacja czeka na dostępność bazy, wykonuje inicjalizację schematu i danych startowych, a następnie uruchamia serwer Gunicorn. Healthcheck sprawdza dostępność endpointu `/login`.
+Aplikacja czeka na dostępność bazy, automatycznie stosuje brakujące migracje Alembic, przygotowuje dane startowe, a następnie uruchamia serwer Gunicorn. Healthcheck sprawdza dostępność endpointu `/login`.
 
 ## Zmienne środowiskowe kontenera
 
@@ -159,3 +178,50 @@ Aplikacja nadal obsługuje zmienną `DATABASE_URL`, co jest wykorzystywane międ
 
 - `docs/BASELINE.md` - stan przed konteneryzacją i referencyjny proces manualny,
 - `docs/CONTAINERIZATION.md` - decyzje projektowe i procedura konteneryzacji.
+
+## Migracje bazy danych
+
+Migracje znajdują się w katalogu `migrations/`. Aktualnie projekt zawiera:
+
+- `0001_initial_schema` - bazowy schemat istniejącej aplikacji,
+- `0002_security_events` - tabela dziennika zdarzeń bezpieczeństwa.
+
+Stan migracji można sprawdzić poleceniem:
+
+```powershell
+flask --app app db current
+```
+
+Ręczne zastosowanie brakujących migracji:
+
+```powershell
+flask --app app db upgrade
+```
+
+Po kolejnej zmianie modeli nową rewizję można przygotować poleceniem:
+
+```powershell
+flask --app app db migrate -m "opis zmiany"
+```
+
+Wygenerowaną migrację należy przejrzeć przed zatwierdzeniem w repozytorium. Przy zwykłym starcie kontenera `init_db.py` wykonuje upgrade automatycznie, dlatego ten sam mechanizm może zostać później użyty podczas wdrożenia przez CI/CD.
+
+## Dziennik bezpieczeństwa
+
+Dziennik jest dostępny wyłącznie dla roli `Admin` pod adresem:
+
+```text
+/admin/security-events
+```
+
+Widok umożliwia filtrowanie po typie zdarzenia, wyniku oraz nazwie użytkownika. Każdy wpis może przechowywać typ zdarzenia, wynik, konto wykonujące operację, konto będące celem operacji, adres IP, user-agent, opis i czas UTC.
+
+
+## Endpointy wdrożeniowe
+
+Aplikacja udostępnia dwa publiczne endpointy techniczne używane do automatycznej weryfikacji wdrożenia:
+
+- `GET /health` - zwraca HTTP 200 i `{"status":"ok","database":"ok"}`, jeśli aplikacja działa i ma połączenie z bazą danych. Docker Compose używa tego endpointu jako healthchecku kontenera aplikacji.
+- `GET /version` - zwraca nazwę aplikacji oraz metadane `APP_VERSION` i `GIT_COMMIT` zapisane w obrazie podczas budowania. Pozwala potwierdzić, że wdrożona została oczekiwana wersja.
+
+Lokalnie można ustawić `APP_VERSION` i `GIT_COMMIT` w `.env`. W docelowym CI/CD wartości będą przekazywane jako argumenty budowania obrazu.

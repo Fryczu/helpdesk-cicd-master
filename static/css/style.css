@@ -1,4 +1,4 @@
-﻿body {
+body {
   background-color: #f8f9fa;
 }
 
@@ -16,4 +16,13 @@
 
 .btn-link {
   text-decoration: none;
+}
+
+.security-log-table {
+  font-size: 0.92rem;
+}
+
+.security-details {
+  min-width: 260px;
+  white-space: normal;
 }

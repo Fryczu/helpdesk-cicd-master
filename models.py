@@ -32,6 +32,20 @@ class User(db.Model):
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     comments = db.relationship("Comment", back_populates="author", lazy="dynamic")
     activity_logs = db.relationship("ActivityLog", back_populates="user", lazy="dynamic")
+    security_events = db.relationship(
+        "SecurityEvent",
+        foreign_keys="SecurityEvent.user_id",
+        back_populates="user",
+        lazy="dynamic",
+        passive_deletes=True,
+    )
+    security_target_events = db.relationship(
+        "SecurityEvent",
+        foreign_keys="SecurityEvent.target_user_id",
+        back_populates="target_user",
+        lazy="dynamic",
+        passive_deletes=True,
+    )
     created_tickets = db.relationship(
         "Ticket",
         foreign_keys="Ticket.user_id",
@@ -108,6 +122,45 @@ class ActivityLog(db.Model):
 
     def __repr__(self):
         return f"<ActivityLog {self.action} on Ticket {self.ticket_id}>"
+
+
+class SecurityEvent(db.Model):
+    __tablename__ = "security_events"
+
+    id = db.Column(db.Integer, primary_key=True)
+    event_type = db.Column(db.String(80), nullable=False, index=True)
+    success = db.Column(db.Boolean, nullable=False, default=True)
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    target_user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    username = db.Column(db.String(80), nullable=True)
+    ip_address = db.Column(db.String(45), nullable=True)
+    user_agent = db.Column(db.String(255), nullable=True)
+    details = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=utc_now_naive, index=True)
+
+    user = db.relationship(
+        "User",
+        foreign_keys=[user_id],
+        back_populates="security_events",
+    )
+    target_user = db.relationship(
+        "User",
+        foreign_keys=[target_user_id],
+        back_populates="security_target_events",
+    )
+
+    def __repr__(self):
+        return f"<SecurityEvent {self.event_type} success={self.success}>"
 
 
 class Attachment(db.Model):

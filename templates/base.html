@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="pl">
   <head>
     <meta charset="utf-8">
@@ -28,6 +28,9 @@
               {% if current_user.role == 'Admin' %}
                 <li class="nav-item">
                   <a class="nav-link" href="{{ url_for('admin_users') }}">Administracja</a>
+                </li>
+                <li class="nav-item">
+                  <a class="nav-link" href="{{ url_for('admin_security_events') }}">Bezpieczeństwo</a>
                 </li>
               {% endif %}
               <li class="nav-item">

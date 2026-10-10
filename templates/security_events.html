@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}Dziennik bezpieczeństwa{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h1>Dziennik bezpieczeństwa</h1>
+    <p class="text-muted mb-0">Rejestr zdarzeń związanych z uwierzytelnianiem, uprawnieniami i kontrolą dostępu.</p>
+  </div>
+  <a class="btn btn-outline-secondary" href="{{ url_for('admin_users') }}">Użytkownicy</a>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <form class="row g-3" method="get">
+      <div class="col-md-4">
+        <label class="form-label" for="event_type">Typ zdarzenia</label>
+        <select class="form-select" id="event_type" name="event_type">
+          <option value="">Wszystkie</option>
+          {% for event_type in event_types %}
+            <option value="{{ event_type }}" {% if selected_event_type == event_type %}selected{% endif %}>
+              {{ event_type }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label" for="success">Wynik</label>
+        <select class="form-select" id="success" name="success">
+          <option value="">Wszystkie</option>
+          <option value="true" {% if selected_success == 'true' %}selected{% endif %}>Sukces</option>
+          <option value="false" {% if selected_success == 'false' %}selected{% endif %}>Niepowodzenie</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label" for="username">Użytkownik / login</label>
+        <input class="form-control" id="username" name="username" value="{{ username_filter }}" placeholder="np. admin">
+      </div>
+      <div class="col-md-2 d-flex align-items-end gap-2">
+        <button class="btn btn-primary" type="submit">Filtruj</button>
+        <a class="btn btn-outline-secondary" href="{{ url_for('admin_security_events') }}">Wyczyść</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    {% if events %}
+      <div class="table-responsive">
+        <table class="table table-hover align-middle security-log-table">
+          <thead>
+            <tr>
+              <th>Data (UTC)</th>
+              <th>Typ</th>
+              <th>Wynik</th>
+              <th>Użytkownik</th>
+              <th>Cel</th>
+              <th>Adres IP</th>
+              <th>Szczegóły</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for event in events %}
+              <tr>
+                <td class="text-nowrap">{{ event.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                <td><code>{{ event.event_type }}</code></td>
+                <td>
+                  {% if event.success %}
+                    <span class="badge bg-success">Sukces</span>
+                  {% else %}
+                    <span class="badge bg-danger">Niepowodzenie</span>
+                  {% endif %}
+                </td>
+                <td>{{ event.username or '—' }}</td>
+                <td>{{ event.target_user.username if event.target_user else '—' }}</td>
+                <td class="text-nowrap">{{ event.ip_address or '—' }}</td>
+                <td class="security-details">{{ event.details or '—' }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="text-muted small mb-0">Widok pokazuje maksymalnie 250 najnowszych zdarzeń spełniających wybrane filtry.</p>
+    {% else %}
+      <p class="text-muted mb-0">Brak zdarzeń spełniających wybrane kryteria.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
