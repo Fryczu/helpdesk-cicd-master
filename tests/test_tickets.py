@@ -221,3 +221,46 @@ def test_attachment_is_saved_outside_database_and_metadata_is_recorded(app, clie
         assert attachment.size == len(b"test file content")
         assert Path(attachment.path).is_file()
         assert Path(attachment.path).read_bytes() == b"test file content"
+
+def test_technician_sees_requester_identity_in_ticket_details(app, client, login, ids):
+    with app.app_context():
+        ticket = Ticket(
+            title="Zgłoszenie z danymi zgłaszającego",
+            description="Opis",
+            user_id=ids["test"],
+            category_id=ids["hardware"],
+        )
+        db.session.add(ticket)
+        db.session.commit()
+        ticket_id = ticket.id
+
+    login("tech")
+    response = client.get(f"/tickets/{ticket_id}")
+    body = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "Zgłaszający:" in body
+    assert "test" in body
+    assert "test@example.com" in body
+
+
+def test_staff_ticket_list_shows_requester_username(app, client, login, ids):
+    with app.app_context():
+        ticket = Ticket(
+            title="Zgłoszenie widoczne na liście",
+            description="Opis",
+            user_id=ids["test"],
+            category_id=ids["software"],
+        )
+        db.session.add(ticket)
+        db.session.commit()
+
+    login("admin")
+    response = client.get("/tickets")
+    body = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "Zgłaszający" in body
+    assert "Zgłoszenie widoczne na liście" in body
+    assert "test" in body
+
