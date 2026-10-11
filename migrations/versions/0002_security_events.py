@@ -3,8 +3,8 @@
 Revision ID: 0002_security_events
 Revises: 0001_initial_schema
 """
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "0002_security_events"
 down_revision = "0001_initial_schema"

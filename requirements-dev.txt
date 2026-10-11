@@ -1,0 +1,6 @@
+-r requirements.txt
+
+pytest==9.0.3
+ruff
+bandit
+pip-audit
