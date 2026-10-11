@@ -1,0 +1,181 @@
+name: HelpDesk Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to restore, e.g. v4.2.4"
+        required: true
+        type: string
+
+jobs:
+  rollback:
+    name: Roll back HelpDesk
+    runs-on:
+      - self-hosted
+      - Windows
+      - X64
+
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare rollback metadata
+        shell: powershell
+        run: |
+          $version = "${{ inputs.version }}"
+
+          if ($version -notmatch '^v\d+\.\d+\.\d+$') {
+              Write-Error "Invalid version format: $version"
+              exit 1
+          }
+
+          $image = "ghcr.io/${{ github.repository }}".ToLower()
+
+          "ROLLBACK_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "APP_IMAGE=${image}:$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ROLLBACK_STARTED=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          Write-Host "Rollback target: ${image}:$version"
+
+      - name: Create deployment environment file
+        shell: powershell
+        env:
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          DEFAULT_ADMIN_PASSWORD: ${{ secrets.DEFAULT_ADMIN_PASSWORD }}
+        run: |
+          @"
+          POSTGRES_PASSWORD=$env:POSTGRES_PASSWORD
+          SECRET_KEY=$env:SECRET_KEY
+          DEFAULT_ADMIN_PASSWORD=$env:DEFAULT_ADMIN_PASSWORD
+          "@ | Set-Content -Path .env -Encoding ascii
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull rollback image
+        shell: powershell
+        run: |
+          docker pull "$env:APP_IMAGE"
+
+      - name: Read image metadata
+        shell: powershell
+        run: |
+          $imageEnv = docker image inspect $env:APP_IMAGE --format '{{range .Config.Env}}{{println .}}{{end}}'
+
+          $versionLine = $imageEnv |
+            Where-Object { $_ -like 'APP_VERSION=*' } |
+            Select-Object -First 1
+
+          $commitLine = $imageEnv |
+            Where-Object { $_ -like 'GIT_COMMIT=*' } |
+            Select-Object -First 1
+
+          if (-not $versionLine) {
+              Write-Error "APP_VERSION not found in image."
+              exit 1
+          }
+
+          if (-not $commitLine) {
+              Write-Error "GIT_COMMIT not found in image."
+              exit 1
+          }
+
+          $appVersion = $versionLine -replace '^APP_VERSION=', ''
+          $gitCommit = $commitLine -replace '^GIT_COMMIT=', ''
+
+          if ($appVersion -ne $env:ROLLBACK_VERSION) {
+              Write-Error "Image version $appVersion does not match requested rollback version $env:ROLLBACK_VERSION"
+              exit 1
+          }
+
+          "APP_VERSION=$appVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "GIT_COMMIT=$gitCommit" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          Write-Host "Image version: $appVersion"
+          Write-Host "Image commit: $gitCommit"
+
+      - name: Show current application version
+        shell: powershell
+        run: |
+          try {
+              $current = Invoke-RestMethod http://localhost:5000/version
+
+              Write-Host "Current version: $($current.version)"
+              Write-Host "Current commit: $($current.commit)"
+          }
+          catch {
+              Write-Host "Unable to read currently deployed version."
+          }
+
+      - name: Deploy rollback version
+        shell: powershell
+        run: |
+          docker compose -p helpdesk-v41 --env-file .env up -d --no-build
+
+      - name: Run database migrations
+        shell: powershell
+        run: |
+          docker compose -p helpdesk-v41 --env-file .env exec -T app flask --app app db upgrade
+          docker compose -p helpdesk-v41 --env-file .env exec -T app flask --app app db current
+
+      - name: Wait for application health
+        shell: powershell
+        run: |
+          $healthy = $false
+
+          for ($i = 1; $i -le 30; $i++) {
+              try {
+                  $result = Invoke-RestMethod http://localhost:5000/health
+
+                  if ($result.status -eq "ok" -and $result.database -eq "ok") {
+                      Write-Host "Application is healthy."
+                      $healthy = $true
+                      break
+                  }
+              }
+              catch {
+                  Write-Host "Waiting for application... attempt $i/30"
+              }
+
+              Start-Sleep -Seconds 2
+          }
+
+          if (-not $healthy) {
+              Write-Error "Application did not become healthy after rollback."
+              exit 1
+          }
+
+      - name: Verify rollback
+        shell: powershell
+        run: |
+          $result = Invoke-RestMethod http://localhost:5000/version
+
+          Write-Host "Application: $($result.application)"
+          Write-Host "Version: $($result.version)"
+          Write-Host "Commit: $($result.commit)"
+
+          if ($result.version -ne $env:ROLLBACK_VERSION) {
+              Write-Error "Rollback verification failed. Expected $env:ROLLBACK_VERSION but got $($result.version)"
+              exit 1
+          }
+
+          if ($result.commit -ne $env:GIT_COMMIT) {
+              Write-Error "Rollback commit verification failed."
+              exit 1
+          }
+
+          $finished = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+          $elapsed = $finished - [int64]$env:ROLLBACK_STARTED
+
+          Write-Host "ROLLBACK SUCCESSFUL"
+          Write-Host "Rollback duration: $elapsed seconds"
