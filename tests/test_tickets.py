@@ -13,6 +13,7 @@ def test_user_can_create_ticket_with_valid_category(app, client, login, ids):
             "title": "Nowe zgłoszenie",
             "description": "Opis testowy",
             "category_id": str(ids["software"]),
+            "priority": "High",
         },
         follow_redirects=True,
     )
@@ -27,11 +28,31 @@ def test_user_can_create_ticket_with_valid_category(app, client, login, ids):
         assert ticket.user_id == ids["test"]
         assert ticket.category_id == ids["software"]
         assert ticket.status == "New"
+        assert ticket.priority == "High"
         assert ActivityLog.query.filter_by(
             ticket_id=ticket.id,
             action="ticket_created",
         ).count() == 1
 
+def test_ticket_creation_rejects_invalid_priority(app, client, login, ids):
+    login()
+
+    response = client.post(
+        "/tickets/create",
+        data={
+            "title": "Niepoprawny priorytet",
+            "description": "Opis",
+            "category_id": str(ids["software"]),
+            "priority": "Critical",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "Wybierz poprawny priorytet zgłoszenia." in response.get_data(as_text=True)
+
+    with app.app_context():
+        assert Ticket.query.filter_by(title="Niepoprawny priorytet").count() == 0
 
 def test_ticket_creation_requires_category(app, client, login):
     login()
