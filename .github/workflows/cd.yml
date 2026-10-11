@@ -110,12 +110,15 @@ jobs:
       - name: Prepare deployment metadata
         shell: powershell
         run: |
-          $image = "ghcr.io/${{ github.repository }}".ToLower()
-          $shortSha = "${{ github.sha }}".Substring(0, 7)
+            $image = "ghcr.io/${{ github.repository }}".ToLower()
+            $tag = "${{ github.ref_name }}"
+            $shortSha = "${{ github.sha }}".Substring(0, 7)
 
-          "APP_IMAGE=$image:${{ github.ref_name }}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "APP_VERSION=${{ github.ref_name }}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "GIT_COMMIT=$shortSha" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "APP_IMAGE=${image}:$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "APP_VERSION=$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "GIT_COMMIT=$shortSha" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+            Write-Host "Deployment image: ${image}:$tag"
 
       - name: Create deployment environment file
         shell: powershell
