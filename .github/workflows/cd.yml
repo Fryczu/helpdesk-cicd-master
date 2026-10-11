@@ -131,11 +131,11 @@ jobs:
           "@ | Set-Content -Path .env -Encoding ascii
 
       - name: Log in to GitHub Container Registry
-        shell: powershell
-        env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $env:GHCR_TOKEN | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+        uses: docker/login-action@v3
+        with:
+            registry: ghcr.io
+            username: ${{ github.actor }}
+            password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Pull release image
         shell: powershell
