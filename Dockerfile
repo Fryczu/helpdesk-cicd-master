@@ -20,6 +20,8 @@ RUN python -m pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+RUN chmod +x /app/docker-entrypoint.sh
+
 RUN useradd --create-home --uid 10001 appuser \
     && mkdir -p /app/uploads/attachments \
     && chown -R appuser:appuser /app
