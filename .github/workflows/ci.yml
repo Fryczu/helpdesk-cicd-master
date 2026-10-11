@@ -1,0 +1,60 @@
+name: HelpDesk CI
+
+on:
+  push:
+    branches:
+      - main
+      - feature/ci-cd
+
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  quality-security-build:
+    name: Quality, security and Docker build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Ruff
+        run: ruff check .
+
+      - name: Pytest
+        run: python -m pytest -q
+
+      - name: Bandit
+        run: bandit app.py models.py init_db.py -ll
+
+      - name: pip-audit
+        run: pip-audit -r requirements.txt
+
+      - name: Build Docker image
+        run: |
+          docker build --pull \
+            -t helpdesk-ci:${{ github.sha }} \
+            .
+
+      - name: Trivy vulnerability scan
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:latest image \
+            --scanners vuln \
+            --ignore-unfixed \
+            --severity HIGH,CRITICAL \
+            --exit-code 1 \
+            helpdesk-ci:${{ github.sha }}
