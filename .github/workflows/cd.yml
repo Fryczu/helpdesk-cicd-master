@@ -1,0 +1,202 @@
+name: HelpDesk CD
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  verify:
+    name: Verify release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Ruff
+        run: ruff check .
+
+      - name: Pytest
+        run: python -m pytest -q
+
+      - name: Bandit
+        run: bandit app.py models.py init_db.py -ll
+
+      - name: Dependency audit
+        run: pip-audit -r requirements.txt
+
+
+  build-and-push:
+    name: Build, scan and publish image
+    needs: verify
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare image metadata
+        shell: bash
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          SHORT_SHA="${GITHUB_SHA::7}"
+
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+          echo "SHORT_SHA=$SHORT_SHA" >> "$GITHUB_ENV"
+
+      - name: Build Docker image
+        run: |
+          docker build --pull \
+            --build-arg APP_VERSION="${GITHUB_REF_NAME}" \
+            --build-arg GIT_COMMIT="${SHORT_SHA}" \
+            -t "${IMAGE}:${GITHUB_REF_NAME}" \
+            .
+
+      - name: Trivy vulnerability scan
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:latest image \
+            --scanners vuln \
+            --ignore-unfixed \
+            --severity HIGH,CRITICAL \
+            --exit-code 1 \
+            "${IMAGE}:${GITHUB_REF_NAME}"
+
+      - name: Log in to GitHub Container Registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+          docker login ghcr.io \
+            -u "${{ github.actor }}" \
+            --password-stdin
+
+      - name: Push Docker image
+        run: docker push "${IMAGE}:${GITHUB_REF_NAME}"
+
+
+  deploy:
+    name: Deploy to HelpDesk environment
+    needs: build-and-push
+
+    runs-on:
+      - self-hosted
+      - Windows
+      - X64
+
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare deployment metadata
+        shell: powershell
+        run: |
+          $image = "ghcr.io/${{ github.repository }}".ToLower()
+          $shortSha = "${{ github.sha }}".Substring(0, 7)
+
+          "APP_IMAGE=$image:${{ github.ref_name }}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "APP_VERSION=${{ github.ref_name }}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "GIT_COMMIT=$shortSha" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Create deployment environment file
+        shell: powershell
+        env:
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          DEFAULT_ADMIN_PASSWORD: ${{ secrets.DEFAULT_ADMIN_PASSWORD }}
+        run: |
+          @"
+          POSTGRES_PASSWORD=$env:POSTGRES_PASSWORD
+          SECRET_KEY=$env:SECRET_KEY
+          DEFAULT_ADMIN_PASSWORD=$env:DEFAULT_ADMIN_PASSWORD
+          "@ | Set-Content -Path .env -Encoding ascii
+
+      - name: Log in to GitHub Container Registry
+        shell: powershell
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $env:GHCR_TOKEN | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Pull release image
+        shell: powershell
+        run: |
+          docker compose -p helpdesk-v41 --env-file .env pull app
+
+      - name: Deploy release
+        shell: powershell
+        run: |
+          docker compose -p helpdesk-v41 --env-file .env up -d --no-build
+
+      - name: Run database migrations
+        shell: powershell
+        run: |
+          docker compose -p helpdesk-v41 --env-file .env exec -T app flask --app app db upgrade
+          docker compose -p helpdesk-v41 --env-file .env exec -T app flask --app app db current
+
+      - name: Wait for application health
+        shell: powershell
+        run: |
+          $healthy = $false
+
+          for ($i = 1; $i -le 30; $i++) {
+              try {
+                  $result = Invoke-RestMethod http://localhost:5000/health
+
+                  if ($result.status -eq "ok" -and $result.database -eq "ok") {
+                      Write-Host "Application is healthy."
+                      $healthy = $true
+                      break
+                  }
+              }
+              catch {
+                  Write-Host "Waiting for application... attempt $i/30"
+              }
+
+              Start-Sleep -Seconds 2
+          }
+
+          if (-not $healthy) {
+              Write-Error "Application did not become healthy."
+              exit 1
+          }
+
+      - name: Verify deployed version
+        shell: powershell
+        run: |
+          $version = Invoke-RestMethod http://localhost:5000/version
+
+          Write-Host "Application: $($version.application)"
+          Write-Host "Version: $($version.version)"
+          Write-Host "Commit: $($version.commit)"
+
+          if ($version.version -ne "${{ github.ref_name }}") {
+              Write-Error "Wrong application version deployed."
+              exit 1
+          }
+
+          $expectedCommit = "${{ github.sha }}".Substring(0, 7)
+
+          if ($version.commit -ne $expectedCommit) {
+              Write-Error "Wrong commit deployed."
+              exit 1
+          }
