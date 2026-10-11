@@ -4,7 +4,13 @@ import time
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
-from app import app, apply_database_migrations, create_default_admin, create_default_categories, db
+from app import (
+    app,
+    apply_database_migrations,
+    create_default_admin,
+    create_default_categories,
+    db,
+)
 
 
 def wait_for_database(max_attempts=30, delay_seconds=2):

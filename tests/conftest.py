@@ -1,5 +1,4 @@
 import os
-from pathlib import Path
 
 import pytest
 from werkzeug.security import generate_password_hash
@@ -9,8 +8,9 @@ from werkzeug.security import generate_password_hash
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ["SECRET_KEY"] = "test-secret-key"
 
-from app import app as flask_app, db  # noqa: E402
-from models import Category, User  # noqa: E402
+from app import app as flask_app
+from app import db
+from models import Category, User
 
 
 @pytest.fixture()

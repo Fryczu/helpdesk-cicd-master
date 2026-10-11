@@ -1,4 +1,3 @@
-from models import User
 
 
 def test_login_page_loads(client):

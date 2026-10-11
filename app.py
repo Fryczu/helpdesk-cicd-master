@@ -35,6 +35,7 @@ from models import (
     db,
 )
 
+
 def build_database_uri():
     explicit_url = os.getenv("DATABASE_URL")
     if explicit_url:
@@ -477,7 +478,7 @@ def ticket_details(ticket_id):
                         ticket.id,
                         user.id,
                         "attachment_added",
-                        f"Dodał załącznik do zgłoszenia.",
+                        "Dodał załącznik do zgłoszenia.",
                     )
                     flash("Załączniki zostały dodane.", "success")
 
