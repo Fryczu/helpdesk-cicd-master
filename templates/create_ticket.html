@@ -23,6 +23,16 @@
             </select>
           </div>
           <div class="mb-3">
+            <label for="priority" class="form-label">Priorytet</label>
+            <select class="form-select" id="priority" name="priority" required>
+              {% for item in priorities %}
+                <option value="{{ item }}" {% if priority == item %}selected{% endif %}>
+                  {{ item }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
             <label for="description" class="form-label">Opis</label>
             <textarea class="form-control" id="description" name="description" rows="6" required>{{ description or '' }}</textarea>
           </div>

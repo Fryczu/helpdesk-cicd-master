@@ -23,6 +23,7 @@ from werkzeug.utils import secure_filename
 
 from models import (
     DEFAULT_CATEGORIES,
+    TICKET_PRIORITIES,
     TICKET_STATUSES,
     USER_ROLES,
     ActivityLog,
@@ -352,6 +353,7 @@ def create_ticket():
         title = request.form.get("title", "").strip()
         description = request.form.get("description", "").strip()
         category_id = request.form.get("category_id", type=int)
+        priority = request.form.get("priority", "Normal").strip()
         uploaded_files = request.files.getlist("attachments")
 
         if not title or not description:
@@ -361,6 +363,19 @@ def create_ticket():
                 title=title,
                 description=description,
                 categories=categories,
+                priorities=TICKET_PRIORITIES,
+                priority=priority,
+            )
+
+        if priority not in TICKET_PRIORITIES:
+            flash("Wybierz poprawny priorytet zgłoszenia.", "danger")
+            return render_template(
+                "create_ticket.html",
+                title=title,
+                description=description,
+                categories=categories,
+                priorities=TICKET_PRIORITIES,
+                priority="Normal",
             )
 
         if category_id is None or db.session.get(Category, category_id) is None:
@@ -370,12 +385,15 @@ def create_ticket():
                 title=title,
                 description=description,
                 categories=categories,
+                priorities=TICKET_PRIORITIES,
+                priority=priority,
             )
 
         ticket = Ticket(
             title=title,
             description=description,
             status="New",
+            priority=priority,
             user_id=current_user().id,
             category_id=category_id,
         )
@@ -392,7 +410,12 @@ def create_ticket():
         flash("Zgłoszenie zostało utworzone.", "success")
         return redirect(url_for("tickets"))
 
-    return render_template("create_ticket.html", categories=categories)
+    return render_template(
+        "create_ticket.html",
+        categories=categories,
+        priorities=TICKET_PRIORITIES,
+        priority="Normal",
+    )
 
 
 @app.route("/tickets/<int:ticket_id>", methods=["GET", "POST"])

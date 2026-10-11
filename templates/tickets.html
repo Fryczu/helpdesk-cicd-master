@@ -36,6 +36,7 @@
               <th>#</th>
               <th>Tytuł</th>
               <th>Kategoria</th>
+              <th>Priorytet</th>
               {% if current_user and current_user.role in ['Technician', 'Admin'] %}
                 <th>Zgłaszający</th>
               {% endif %}
@@ -51,6 +52,15 @@
                 <td>{{ ticket.id }}</td>
                 <td>{{ ticket.title }}</td>
                 <td>{{ ticket.category.name }}</td>
+                <td>
+                  {% if ticket.priority == 'High' %}
+                    <span class="badge bg-danger">High</span>
+                  {% elif ticket.priority == 'Low' %}
+                    <span class="badge bg-secondary">Low</span>
+                  {% else %}
+                    <span class="badge bg-warning text-dark">Normal</span>
+                  {% endif %}
+                </td>
                 {% if current_user and current_user.role in ['Technician', 'Admin'] %}
                   <td>{{ ticket.creator.username }}</td>
                 {% endif %}

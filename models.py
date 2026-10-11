@@ -4,6 +4,7 @@ from flask_sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
 TICKET_STATUSES = ["New", "In Progress", "Resolved", "Closed"]
+TICKET_PRIORITIES = ["Low", "Normal", "High"]
 USER_ROLES = ["Admin", "Technician", "User"]
 
 
@@ -90,6 +91,7 @@ class Ticket(db.Model):
     title = db.Column(db.String(140), nullable=False)
     description = db.Column(db.Text, nullable=False)
     status = db.Column(db.String(50), nullable=False, default="New")
+    priority = db.Column(db.String(20), nullable=False, default="Normal")
     created_at = db.Column(db.DateTime, nullable=False, default=utc_now_naive)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     category_id = db.Column(db.Integer, db.ForeignKey("categories.id"), nullable=False)
