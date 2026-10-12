@@ -1,0 +1,12 @@
+Deployment stage: Pull release image
+
+Error:
+unable to get image ':2.2':
+Error response from daemon: invalid reference format
+
+Context:
+The deployment workflow generated APP_IMAGE in PowerShell.
+Expected image format:
+ghcr.io/fryczu/helpdesk-cicd-master:v4.2.2
+
+The image could not be pulled by Docker Compose.
