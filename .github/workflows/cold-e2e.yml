@@ -1,0 +1,234 @@
+name: HelpDesk End-to-End Cold Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Measurement identifier, e.g. cold1"
+        required: true
+        default: "cold1"
+        type: string
+
+jobs:
+  verify:
+    name: Quality and security checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Ruff
+        run: ruff check .
+
+      - name: Pytest
+        run: python -m pytest -q
+
+      - name: Bandit
+        run: bandit app.py models.py init_db.py -ll
+
+      - name: pip-audit
+        run: pip-audit -r requirements.txt
+
+
+  build-and-push:
+    name: Build, scan and publish image
+    needs: verify
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare image metadata
+        shell: bash
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          TAG="v4.3-${{ inputs.run_id }}"
+          SHORT_SHA="${GITHUB_SHA::7}"
+
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "SHORT_SHA=$SHORT_SHA" >> "$GITHUB_ENV"
+
+          echo "Image: $IMAGE:$TAG"
+          echo "Commit: $SHORT_SHA"
+
+      - name: Build Docker image from scratch
+        run: |
+          docker build \
+            --pull \
+            --no-cache \
+            --build-arg APP_VERSION="v4.3" \
+            --build-arg GIT_COMMIT="${SHORT_SHA}" \
+            -t "${IMAGE}:${TAG}" \
+            .
+
+      - name: Trivy vulnerability scan
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:latest image \
+            --scanners vuln \
+            --ignore-unfixed \
+            --severity HIGH,CRITICAL \
+            --exit-code 1 \
+            "${IMAGE}:${TAG}"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push fresh image
+        run: docker push "${IMAGE}:${TAG}"
+
+
+  deploy:
+    name: Deploy to clean environment
+    needs: build-and-push
+
+    runs-on:
+      - self-hosted
+      - Windows
+      - X64
+
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare deployment metadata
+        shell: powershell
+        run: |
+          $image = "ghcr.io/${{ github.repository }}".ToLower()
+          $tag = "v4.3-${{ inputs.run_id }}"
+          $shortSha = "${{ github.sha }}".Substring(0, 7)
+
+          "APP_IMAGE=${image}:$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "EXPECTED_COMMIT=$shortSha" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          Write-Host "Fresh deployment image: ${image}:$tag"
+
+      - name: Create deployment environment
+        shell: powershell
+        env:
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          DEFAULT_ADMIN_PASSWORD: ${{ secrets.DEFAULT_ADMIN_PASSWORD }}
+        run: |
+          @"
+          POSTGRES_PASSWORD=$env:POSTGRES_PASSWORD
+          SECRET_KEY=$env:SECRET_KEY
+          DEFAULT_ADMIN_PASSWORD=$env:DEFAULT_ADMIN_PASSWORD
+          APP_IMAGE=$env:APP_IMAGE
+          APP_PORT=5001
+          "@ | Set-Content -Path .env -Encoding ascii
+
+      - name: Remove previous cold environment
+        shell: powershell
+        run: |
+          docker compose -p helpdesk-cold --env-file .env down -v --remove-orphans
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull fresh images
+        shell: powershell
+        run: |
+          docker compose -p helpdesk-cold --env-file .env pull
+
+      - name: Start clean environment
+        shell: powershell
+        run: |
+          docker compose -p helpdesk-cold --env-file .env up -d --no-build
+
+      - name: Run all database migrations
+        shell: powershell
+        run: |
+          docker compose -p helpdesk-cold --env-file .env exec -T app flask --app app db upgrade
+
+          $migration = docker compose -p helpdesk-cold --env-file .env exec -T app flask --app app db current 2>&1
+
+          $migration | ForEach-Object { Write-Host $_ }
+
+          if (($migration -join "`n") -notmatch "0003_ticket_priority") {
+              Write-Error "Database did not reach migration 0003_ticket_priority."
+              exit 1
+          }
+
+      - name: Wait for application health
+        shell: powershell
+        run: |
+          $healthy = $false
+
+          for ($i = 1; $i -le 40; $i++) {
+              try {
+                  $result = Invoke-RestMethod http://localhost:5001/health
+
+                  if ($result.status -eq "ok" -and $result.database -eq "ok") {
+                      Write-Host "Application is healthy."
+                      $healthy = $true
+                      break
+                  }
+              }
+              catch {
+                  Write-Host "Waiting for application... attempt $i/40"
+              }
+
+              Start-Sleep -Seconds 2
+          }
+
+          if (-not $healthy) {
+              Write-Error "Application did not become healthy."
+              docker compose -p helpdesk-cold --env-file .env logs
+              exit 1
+          }
+
+      - name: Verify deployed version
+        shell: powershell
+        run: |
+          $version = Invoke-RestMethod http://localhost:5001/version
+
+          Write-Host "Application: $($version.application)"
+          Write-Host "Version: $($version.version)"
+          Write-Host "Commit: $($version.commit)"
+
+          if ($version.version -ne "v4.3") {
+              Write-Error "Wrong application version."
+              exit 1
+          }
+
+          if ($version.commit -ne $env:EXPECTED_COMMIT) {
+              Write-Error "Wrong application commit."
+              exit 1
+          }
+
+      - name: Show final environment
+        shell: powershell
+        run: |
+          docker compose -p helpdesk-cold --env-file .env ps
