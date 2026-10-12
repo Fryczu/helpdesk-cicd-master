@@ -167,19 +167,7 @@ jobs:
         run: |
           docker compose -p helpdesk-cold --env-file .env up -d --no-build
 
-      - name: Run all database migrations
-        shell: powershell
-        run: |
-          docker compose -p helpdesk-cold --env-file .env exec -T app flask --app app db upgrade
-
-          $migration = docker compose -p helpdesk-cold --env-file .env exec -T app flask --app app db current 2>&1
-
-          $migration | ForEach-Object { Write-Host $_ }
-
-          if (($migration -join "`n") -notmatch "0003_ticket_priority") {
-              Write-Error "Database did not reach migration 0003_ticket_priority."
-              exit 1
-          }
+      
 
       - name: Wait for application health
         shell: powershell
@@ -206,6 +194,18 @@ jobs:
           if (-not $healthy) {
               Write-Error "Application did not become healthy."
               docker compose -p helpdesk-cold --env-file .env logs
+              exit 1
+          }
+
+      - name: Verify database migration
+        shell: powershell
+        run: |
+          $migration = docker compose -p helpdesk-cold --env-file .env exec -T app sh -c "flask --app app db current 2>/dev/null"
+
+          Write-Host "Current database migration: $migration"
+
+          if (($migration -join "`n") -notmatch "0003_ticket_priority") {
+              Write-Error "Database did not reach migration 0003_ticket_priority."
               exit 1
           }
 
