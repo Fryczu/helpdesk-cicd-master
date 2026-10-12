@@ -1,0 +1,120 @@
+name: HelpDesk Cold Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to deploy"
+        required: true
+        default: "v4.3"
+        type: string
+
+jobs:
+  cold-deploy:
+    name: Cold deployment
+    runs-on:
+      - self-hosted
+      - Windows
+      - X64
+
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare deployment environment
+        shell: powershell
+        env:
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          DEFAULT_ADMIN_PASSWORD: ${{ secrets.DEFAULT_ADMIN_PASSWORD }}
+        run: |
+          $image = "ghcr.io/${{ github.repository }}".ToLower()
+          $version = "${{ inputs.version }}"
+
+          @"
+          POSTGRES_PASSWORD=$env:POSTGRES_PASSWORD
+          SECRET_KEY=$env:SECRET_KEY
+          DEFAULT_ADMIN_PASSWORD=$env:DEFAULT_ADMIN_PASSWORD
+          APP_IMAGE=${image}:$version
+          APP_PORT=5001
+          "@ | Set-Content -Path .env -Encoding ascii
+
+          Write-Host "Cold deployment image: ${image}:$version"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Remove previous cold environment
+        shell: powershell
+        run: |
+          docker compose -p helpdesk-cold --env-file .env down -v --remove-orphans
+
+      - name: Pull images
+        shell: powershell
+        run: |
+          docker compose -p helpdesk-cold --env-file .env pull
+
+      - name: Deploy clean environment
+        shell: powershell
+        run: |
+          docker compose -p helpdesk-cold --env-file .env up -d --no-build
+
+      - name: Wait for application health
+        shell: powershell
+        run: |
+          $healthy = $false
+
+          for ($i = 1; $i -le 40; $i++) {
+              try {
+                  $result = Invoke-RestMethod http://localhost:5001/health
+
+                  if ($result.status -eq "ok" -and $result.database -eq "ok") {
+                      Write-Host "Cold deployment is healthy."
+                      $healthy = $true
+                      break
+                  }
+              }
+              catch {
+                  Write-Host "Waiting for application... attempt $i/40"
+              }
+
+              Start-Sleep -Seconds 2
+          }
+
+          if (-not $healthy) {
+              Write-Error "Cold deployment did not become healthy."
+              docker compose -p helpdesk-cold --env-file .env logs
+              exit 1
+          }
+
+      - name: Verify database migration
+        shell: powershell
+        run: |
+          docker compose -p helpdesk-cold --env-file .env exec -T app flask --app app db current
+
+      - name: Verify deployed version
+        shell: powershell
+        run: |
+          $version = Invoke-RestMethod http://localhost:5001/version
+
+          Write-Host "Application: $($version.application)"
+          Write-Host "Version: $($version.version)"
+          Write-Host "Commit: $($version.commit)"
+
+          if ($version.version -ne "${{ inputs.version }}") {
+              Write-Error "Wrong version deployed."
+              exit 1
+          }
+
+      - name: Show final containers
+        shell: powershell
+        run: |
+          docker compose -p helpdesk-cold --env-file .env ps
