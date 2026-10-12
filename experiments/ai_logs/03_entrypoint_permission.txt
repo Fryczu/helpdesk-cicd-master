@@ -1,0 +1,11 @@
+Deployment stage: Start application container
+
+Error:
+exec: "./docker-entrypoint.sh": permission denied
+
+Context:
+The Docker image was successfully built, scanned, pushed to GHCR and pulled
+by the deployment runner.
+
+The container failed immediately when Docker attempted to execute:
+./docker-entrypoint.sh

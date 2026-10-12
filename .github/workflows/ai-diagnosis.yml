@@ -1,0 +1,60 @@
+name: HelpDesk AI Failure Diagnosis
+
+on:
+  workflow_dispatch:
+    inputs:
+      failure_case:
+        description: "Deployment failure to analyze"
+        required: true
+        type: choice
+        options:
+          - ghcr_permission
+          - invalid_image_reference
+          - entrypoint_permission
+
+jobs:
+  ai-diagnosis:
+    name: Analyze deployment failure with AI
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install AI dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-ai.txt
+
+      - name: Select failure log
+        shell: bash
+        run: |
+          case "${{ inputs.failure_case }}" in
+            ghcr_permission)
+              echo "LOG_FILE=experiments/ai_logs/01_ghcr_permission.txt" >> "$GITHUB_ENV"
+              ;;
+            invalid_image_reference)
+              echo "LOG_FILE=experiments/ai_logs/02_invalid_image_reference.txt" >> "$GITHUB_ENV"
+              ;;
+            entrypoint_permission)
+              echo "LOG_FILE=experiments/ai_logs/03_entrypoint_permission.txt" >> "$GITHUB_ENV"
+              ;;
+            *)
+              echo "Unknown failure case"
+              exit 1
+              ;;
+          esac
+
+      - name: AI diagnosis
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          python scripts/ai_diagnose.py "$LOG_FILE"

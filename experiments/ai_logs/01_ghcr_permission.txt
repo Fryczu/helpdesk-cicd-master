@@ -1,0 +1,9 @@
+Deployment stage: Publish Docker image to GitHub Container Registry
+
+Error:
+denied: permission_denied: write_package
+
+Context:
+Docker image was successfully built and scanned.
+Authentication to ghcr.io succeeded.
+The failure occurred during docker push.
